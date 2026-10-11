@@ -91,23 +91,6 @@ jobs:
     runs-on: ubuntu-latest
     concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
     steps:
-      - name: checkout the reusable repo (for the bump script)
-        uses: actions/checkout@v4
-        with: { repository: saltxd/.github, path: reusable }
-      - name: checkout homelab-k3s with the write deploy key
-        uses: actions/checkout@v4
-        with: { repository: saltxd/homelab-k3s, ref: main, path: homelab-k3s, ssh-key: "${{ secrets.HOMELAB_K3S_DEPLOY_KEY }}", persist-credentials: true }
-      - name: bump
-        shell: bash
-        env: { IMAGE: "${{ inputs.image }}", TAG: "${{ needs.build.outputs.tag }}", FILE: "${{ inputs.bump-file }}", KIND: "${{ inputs.bump-kind }}", EXTRA: "${{ inputs.bump-extra-files }}" }
-        run: |
-          set -euo pipefail
-          cd homelab-k3s
-          git config user.name "ci-bump"; git config user.email "ci-bump@users.noreply.github.com"
-          mode=""; [ "$KIND" = "helm-values" ] && mode="--helm-values"
-          bash ../reusable/scripts/bump-image.sh "$FILE" "$IMAGE" "$TAG" $mode
-          IFS=',' read -ra extra <<< "$EXTRA"; for f in "${extra[@]}"; do [ -n "$f" ] && bash ../reusable/scripts/bump-image.sh "$f" "$IMAGE" "$TAG"; done
-          git add -A
-          if git diff --cached --quiet; then echo "nothing to bump"; exit 0; fi
-          git commit -m "ci(${IMAGE##*/}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
-          git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
+      - uses: saltxd/.github/.github/actions/bump-image@main
+        with: { image: "${{ inputs.image }}", tag: "${{ needs.build.outputs.tag }}", file: "${{ inputs.bump-file }}", kind: "${{ inputs.bump-kind }}",
+                extra-files: "${{ inputs.bump-extra-files }}", deploy-key: "${{ secrets.HOMELAB_K3S_DEPLOY_KEY }}" }

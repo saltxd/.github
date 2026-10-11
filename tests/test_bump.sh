@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fixture tests for scripts/bump-image.sh (run: bash tests/test_bump.sh)
-set -euo pipefail; d=$(mktemp -d); trap 'rm -rf "$d"' EXIT; B="$(dirname "$0")/../scripts/bump-image.sh"
+# Fixture tests for .github/actions/bump-image/bump-image.sh (run: bash tests/test_bump.sh)
+set -euo pipefail; d=$(mktemp -d); trap 'rm -rf "$d"' EXIT; B="$(dirname "$0")/../.github/actions/bump-image/bump-image.sh"
 cat > "$d/cronjob.yaml" <<'Y'
 spec:
   jobTemplate:

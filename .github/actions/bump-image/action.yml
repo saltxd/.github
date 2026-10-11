@@ -1,0 +1,41 @@
+# Composite action: rewrite an image tag in saltxd/homelab-k3s and push the commit (GitOps; Flux rolls it out).
+# Used by the reusable build-push.yml, and directly by repos that keep their own build pipeline (custom tag scheme)
+# and only need the bump. Caller example, as the job after the image push:
+#   bump:
+#     needs: [image]
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
+#     steps:
+#       - uses: saltxd/.github/.github/actions/bump-image@main
+#         with: { image: ghcr.io/saltxd/<name>, tag: "${{ github.sha }}", file: curator/<name>.yaml, kind: manifest,
+#                 deploy-key: "${{ secrets.HOMELAB_K3S_DEPLOY_KEY }}" }
+name: bump-image
+description: Rewrite an image tag in saltxd/homelab-k3s and push (Flux deploys it)
+inputs:
+  image:       { required: true,  description: "ghcr.io/saltxd/<name> (must already be pushed with <tag>)" }
+  tag:         { required: true,  description: "the tag that was just pushed" }
+  file:        { required: true,  description: "path in homelab-k3s" }
+  kind:        { required: false, default: "manifest", description: "manifest | helm-values" }
+  extra-files: { required: false, default: "", description: "comma-separated extra manifest files" }
+  deploy-key:  { required: true,  description: "write deploy key for saltxd/homelab-k3s (repo secret HOMELAB_K3S_DEPLOY_KEY)" }
+runs:
+  using: composite
+  steps:
+    - name: checkout homelab-k3s with the write deploy key
+      uses: actions/checkout@v4
+      with: { repository: saltxd/homelab-k3s, ref: main, path: homelab-k3s, ssh-key: "${{ inputs.deploy-key }}", persist-credentials: true }
+    - name: bump
+      shell: bash
+      env: { IMAGE: "${{ inputs.image }}", TAG: "${{ inputs.tag }}", FILE: "${{ inputs.file }}", KIND: "${{ inputs.kind }}", EXTRA: "${{ inputs.extra-files }}", SCRIPT: "${{ github.action_path }}/bump-image.sh" }
+      run: |
+        set -euo pipefail
+        cd homelab-k3s
+        git config user.name "ci-bump"; git config user.email "ci-bump@users.noreply.github.com"
+        mode=""; [ "$KIND" = "helm-values" ] && mode="--helm-values"
+        bash "$SCRIPT" "$FILE" "$IMAGE" "$TAG" $mode
+        IFS=',' read -ra extra <<< "$EXTRA"; for f in "${extra[@]}"; do [ -n "$f" ] && bash "$SCRIPT" "$f" "$IMAGE" "$TAG"; done
+        git add -A
+        if git diff --cached --quiet; then echo "nothing to bump"; exit 0; fi
+        git commit -m "ci(${IMAGE##*/}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
+        git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
