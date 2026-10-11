@@ -13,7 +13,7 @@
 name: bump-image
 description: Rewrite an image tag in saltxd/homelab-k3s and push (Flux deploys it)
 inputs:
-  image:       { required: true,  description: "ghcr.io/saltxd/<name> (must already be pushed with <tag>)" }
+  image:       { required: true,  description: "ghcr.io/saltxd/<name> (must already be pushed with <tag>); comma-separated for several images sharing one tag and one commit" }
   tag:         { required: true,  description: "the tag that was just pushed" }
   file:        { required: true,  description: "path in homelab-k3s" }
   kind:        { required: false, default: "manifest", description: "manifest | helm-values" }
@@ -33,8 +33,12 @@ runs:
         cd homelab-k3s
         git config user.name "ci-bump"; git config user.email "ci-bump@users.noreply.github.com"
         mode=""; [ "$KIND" = "helm-values" ] && mode="--helm-values"
-        bash "$SCRIPT" "$FILE" "$IMAGE" "$TAG" $mode
-        IFS=',' read -ra extra <<< "$EXTRA"; for f in "${extra[@]}"; do [ -n "$f" ] && bash "$SCRIPT" "$f" "$IMAGE" "$TAG"; done
+        IFS=',' read -ra imgs <<< "$IMAGE"; IFS=',' read -ra extra <<< "$EXTRA"
+        for img in "${imgs[@]}"; do
+          bash "$SCRIPT" "$FILE" "$img" "$TAG" $mode
+          for f in "${extra[@]}"; do [ -n "$f" ] && bash "$SCRIPT" "$f" "$img" "$TAG"; done
+        done
+        IMAGE="${imgs[0]}"; [ "${#imgs[@]}" -gt 1 ] && IMAGE="${imgs[0]%-*}"
         git add -A
         if git diff --cached --quiet; then echo "nothing to bump"; exit 0; fi
         git commit -m "ci(${IMAGE##*/}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
