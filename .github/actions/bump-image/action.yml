@@ -42,4 +42,9 @@ runs:
         git add -A
         if git diff --cached --quiet; then echo "nothing to bump"; exit 0; fi
         git commit -m "ci(${IMAGE##*/}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
-        git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
+        # other repos bump homelab-k3s concurrently: rebase + retry with jitter instead of failing on the first race
+        for attempt in 1 2 3 4 5; do
+          git push origin HEAD:main && exit 0
+          sleep $(( attempt * 3 + RANDOM % 5 )); git pull --rebase -q origin main
+        done
+        echo "::error::could not push the bump after 5 attempts"; exit 1

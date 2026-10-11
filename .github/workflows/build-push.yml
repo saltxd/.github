@@ -58,7 +58,7 @@ jobs:
           if grep -qE 'collected 0 items|no tests ran' test.log; then echo "::error::test suite collected 0 tests"; exit 1; fi
   build:
     needs: [test]
-    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -86,7 +86,7 @@ jobs:
           load: true
           push: false
           tags: smoke/image:ci
-          cache-from: type=gha
+          cache-from: "type=gha,scope=${{ inputs.image }}"
       - if: ${{ inputs.smoke-cmd != '' }}
         name: smoke (inside the image)
         env: { SMOKE: "${{ inputs.smoke-cmd }}" }
@@ -100,14 +100,16 @@ jobs:
           tags: |
             ${{ inputs.image }}:${{ steps.meta.outputs.tag }}
             ${{ inputs.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: "type=gha,scope=${{ inputs.image }}"
+          cache-to: "type=gha,mode=max,scope=${{ inputs.image }}"
   bump:
     needs: [build]
     # !cancelled(): the needs chain passes through the optional `test` job, and a skipped ancestor would skip this job under the default success() check
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
     runs-on: ubuntu-latest
-    concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
+    # per image: a bump of image A never queues behind (or cancels) a bump of image B. Callers also cancel an older
+    # run of the same branch (caller-level concurrency), so an older build cannot bump after a newer one.
+    concurrency: { group: "bump-homelab-k3s-${{ inputs.image }}", cancel-in-progress: false }
     steps:
       - uses: saltxd/.github/.github/actions/bump-image@main
         with: { image: "${{ inputs.image }}", tag: "${{ needs.build.outputs.tag }}", file: "${{ inputs.bump-file }}", kind: "${{ inputs.bump-kind }}",
