@@ -10,7 +10,9 @@ if [ "$mode" = "--helm-values" ]; then
   rep=$(yq -r '.spec.values.image.repository // ""' "$file"); has_tag=$(yq -r '.spec.values.image | has("tag")' "$file" 2>/dev/null || echo false)
   if [ -n "$rep" ] || [ "$has_tag" = "true" ]; then
     # chart shape 1: image: { repository?, tag } (repository may be left to the chart default, e.g. jobhunt-web)
-    [ -n "$rep" ] && [ "$rep" != "$repo" ] && { echo "bump-image: $file repository is $rep, not $repo" >&2; exit 1; }
+    # the repository must be stated and match: a mis-pointed bump-file must not retag another release
+    [ -z "$rep" ] && { echo "bump-image: $file has image.tag but no image.repository; add repository: $repo" >&2; exit 1; }
+    [ "$rep" != "$repo" ] && { echo "bump-image: $file repository is $rep, not $repo" >&2; exit 1; }
     cur=$(yq -r '.spec.values.image.tag // ""' "$file")
     [ "$cur" = "$tag" ] && { echo "bump-image: $file already at $tag"; exit 0; }
     yq -i ".spec.values.image.tag = \"$tag\"" "$file"

@@ -50,14 +50,13 @@ bash "$B" "$d/hr2.yaml" ghcr.io/saltxd/chainward-api abc1234 --helm-values >/dev
 [ "$(yq -r '.spec.values.other.note' "$d/hr2.yaml")" = "ghcr.io/saltxd/chainward-api is mentioned in prose" ] || { echo "FAIL 5d: prose rewritten"; exit 1; }
 # 6: shape 2 with no matching string fails loudly
 if bash "$B" "$d/hr2.yaml" ghcr.io/saltxd/nope abc1234 --helm-values 2>/dev/null; then echo "FAIL 6: missing repo did not fail"; exit 1; fi
-# 7: HelmRelease with image.tag only (repository from the chart default) stays shape 1
+# 7: HelmRelease with image.tag but no repository is refused (a mis-pointed bump-file must not retag another release)
 cat > "$d/hr3.yaml" <<'Y'
 spec:
   values:
     image:
       tag: sha-0105065
-    scraperUrl: http://example:8001
 Y
-bash "$B" "$d/hr3.yaml" ghcr.io/saltxd/jobhunt-web sha-f70a771 --helm-values >/dev/null
-[ "$(yq -r '.spec.values.image.tag' "$d/hr3.yaml")" = "sha-f70a771" ] || { echo "FAIL 7: tag-only HelmRelease not bumped"; exit 1; }
+if bash "$B" "$d/hr3.yaml" ghcr.io/saltxd/jobhunt-web sha-f70a771 --helm-values 2>/dev/null; then echo "FAIL 7: bumped without a repository"; exit 1; fi
+[ "$(yq -r '.spec.values.image.tag' "$d/hr3.yaml")" = "sha-0105065" ] || { echo "FAIL 7b: file changed"; exit 1; }
 echo "bump-image.sh: 7/7 fixture checks pass"
