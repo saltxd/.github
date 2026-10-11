@@ -22,6 +22,7 @@ on:
       install-cmd:      { type: string, required: false, default: "" }
       lint-cmd:         { type: string, required: false, default: "" }
       test-cmd:         { type: string, required: false, default: "" }
+      smoke-cmd:        { type: string, required: false, default: "", description: "sh command run INSIDE the built image before it is pushed (proves it is the right image)" }
       bump-file:        { type: string, required: false, default: "", description: "path in homelab-k3s; empty = no bump" }
       bump-kind:        { type: string, required: false, default: "manifest", description: "manifest | helm-values" }
       bump-extra-files: { type: string, required: false, default: "", description: "comma-separated extra manifest files" }
@@ -73,6 +74,23 @@ jobs:
       - if: ${{ steps.meta.outputs.pushed == 'true' }}
         uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      # Optional smoke: load the image locally and run a command inside it BEFORE anything is pushed or bumped.
+      # 2026-10-11: jobhunt-triage was built from the wrong Dockerfile and every check still passed; a one-line
+      # `test -f /home/triage/run_triage.py` here would have stopped it.
+      - if: ${{ inputs.smoke-cmd != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: smoke/image:ci
+          cache-from: type=gha
+      - if: ${{ inputs.smoke-cmd != '' }}
+        name: smoke (inside the image)
+        env: { SMOKE: "${{ inputs.smoke-cmd }}" }
+        run: docker run --rm --entrypoint sh smoke/image:ci -c "$SMOKE"
       - uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context }}
