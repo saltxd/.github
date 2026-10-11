@@ -1,5 +1,5 @@
 # Public repo: a leaked key is world-readable the moment it is pushed.
-name: gitleaks
+name: checks
 on:
   push: { branches: [main] }
   pull_request:
@@ -12,3 +12,9 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: gitleaks/gitleaks-action@v2
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+  bump-script:
+    # fixture tests for the bump script every deploy in the homelab depends on
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/test_bump.sh

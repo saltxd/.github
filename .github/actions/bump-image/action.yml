@@ -5,7 +5,7 @@
 #     needs: [image]
 #     if: github.ref == 'refs/heads/main'
 #     runs-on: ubuntu-latest
-#     concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
+#     concurrency: { group: "bump-homelab-k3s-ghcr.io/saltxd/<name>", cancel-in-progress: false }
 #     steps:
 #       - uses: saltxd/.github/.github/actions/bump-image@main
 #         with: { image: ghcr.io/saltxd/<name>, tag: "${{ github.sha }}", file: curator/<name>.yaml, kind: manifest,
