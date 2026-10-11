@@ -1,5 +1,7 @@
 # Reusable: test -> build -> push to GHCR -> bump the image tag in saltxd/homelab-k3s (GitOps; Flux rolls it).
+# Callers MUST grant `permissions: { contents: read, packages: write }` (a called workflow cannot exceed the caller's token).
 # Caller example:
+#   permissions: { contents: read, packages: write }
 #   jobs:
 #     web:
 #       uses: saltxd/.github/.github/workflows/build-push.yml@main

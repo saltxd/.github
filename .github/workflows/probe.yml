@@ -1,6 +1,7 @@
 # Manual end-to-end probe of build-push.yml: builds a busybox image and bumps docs/ci-bump-probe.yaml in homelab-k3s (a path Flux ignores).
 name: probe
 on: { workflow_dispatch: {} }
+permissions: { contents: read, packages: write }
 jobs:
   probe:
     uses: saltxd/.github/.github/workflows/build-push.yml@main
