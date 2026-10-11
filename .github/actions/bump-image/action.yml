@@ -19,13 +19,27 @@ inputs:
   kind:        { required: false, default: "manifest", description: "manifest | helm-values" }
   extra-files: { required: false, default: "", description: "comma-separated extra manifest files" }
   deploy-key:  { required: true,  description: "write deploy key for saltxd/homelab-k3s (repo secret HOMELAB_K3S_DEPLOY_KEY)" }
+  only-if-head: { required: false, default: "true", description: "branch pushes: skip the bump when a newer commit is already on the branch (its own run will deploy), so an older build can never deploy after a newer one" }
 runs:
   using: composite
   steps:
+    - name: is this commit still the branch head?
+      id: head
+      shell: bash
+      env: { GH_TOKEN: "${{ github.token }}", ONLY: "${{ inputs.only-if-head }}" }
+      run: |
+        if [ "$ONLY" != "true" ] || [ "$GITHUB_EVENT_NAME" != "push" ] || [ "${GITHUB_REF#refs/heads/}" = "$GITHUB_REF" ]; then
+          echo "go=true" >> "$GITHUB_OUTPUT"; exit 0
+        fi
+        head=$(gh api "repos/$GITHUB_REPOSITORY/commits/${GITHUB_REF#refs/heads/}" --jq .sha 2>/dev/null || echo "$GITHUB_SHA")
+        if [ "$head" = "$GITHUB_SHA" ]; then echo "go=true" >> "$GITHUB_OUTPUT"
+        else echo "::notice::${GITHUB_SHA::7} is no longer the head of ${GITHUB_REF#refs/heads/} (${head::7}); its run deploys instead"; echo "go=false" >> "$GITHUB_OUTPUT"; fi
     - name: checkout homelab-k3s with the write deploy key
+      if: steps.head.outputs.go == 'true'
       uses: actions/checkout@v4
       with: { repository: saltxd/homelab-k3s, ref: main, path: homelab-k3s, ssh-key: "${{ inputs.deploy-key }}", persist-credentials: true }
     - name: bump
+      if: steps.head.outputs.go == 'true'
       shell: bash
       env: { IMAGE: "${{ inputs.image }}", TAG: "${{ inputs.tag }}", FILE: "${{ inputs.file }}", KIND: "${{ inputs.kind }}", EXTRA: "${{ inputs.extra-files }}", SCRIPT: "${{ github.action_path }}/bump-image.sh" }
       run: |

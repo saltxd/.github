@@ -107,8 +107,8 @@ jobs:
     # !cancelled(): the needs chain passes through the optional `test` job, and a skipped ancestor would skip this job under the default success() check
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
     runs-on: ubuntu-latest
-    # per image: a bump of image A never queues behind (or cancels) a bump of image B. Callers also cancel an older
-    # run of the same branch (caller-level concurrency), so an older build cannot bump after a newer one.
+    # per image: a bump of image A never queues behind (or cancels) a bump of image B. Ordering: the action only
+    # bumps when its commit is still the branch head, so an older build never deploys over a newer one.
     concurrency: { group: "bump-homelab-k3s-${{ inputs.image }}", cancel-in-progress: false }
     steps:
       - uses: saltxd/.github/.github/actions/bump-image@main
