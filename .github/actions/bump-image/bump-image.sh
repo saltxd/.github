@@ -7,10 +7,10 @@ file=$1; repo=$2; tag=$3; mode=${4:-manifest}
 [ -f "$file" ] || { echo "bump-image: no such file $file" >&2; exit 1; }
 esc=$(printf '%s' "$repo" | sed 's/[.[\*^$/]/\\&/g')
 if [ "$mode" = "--helm-values" ]; then
-  rep=$(yq -r '.spec.values.image.repository // ""' "$file")
-  if [ -n "$rep" ]; then
-    # chart shape 1: image: { repository, tag }
-    [ "$rep" != "$repo" ] && { echo "bump-image: $file repository is $rep, not $repo" >&2; exit 1; }
+  rep=$(yq -r '.spec.values.image.repository // ""' "$file"); has_tag=$(yq -r '.spec.values.image | has("tag")' "$file" 2>/dev/null || echo false)
+  if [ -n "$rep" ] || [ "$has_tag" = "true" ]; then
+    # chart shape 1: image: { repository?, tag } (repository may be left to the chart default, e.g. jobhunt-web)
+    [ -n "$rep" ] && [ "$rep" != "$repo" ] && { echo "bump-image: $file repository is $rep, not $repo" >&2; exit 1; }
     cur=$(yq -r '.spec.values.image.tag // ""' "$file")
     [ "$cur" = "$tag" ] && { echo "bump-image: $file already at $tag"; exit 0; }
     yq -i ".spec.values.image.tag = \"$tag\"" "$file"
