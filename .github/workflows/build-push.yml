@@ -84,16 +84,10 @@ jobs:
             ${{ inputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  debug-gate:
-    needs: [build]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          echo "build.result=${{ needs.build.result }} pushed=[${{ needs.build.outputs.pushed }}] tag=[${{ needs.build.outputs.tag }}] bump-file=[${{ inputs.bump-file }}] kind=[${{ inputs.bump-kind }}]"
   bump:
     needs: [build]
-    if: ${{ needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
+    # !cancelled(): the needs chain passes through the optional `test` job, and a skipped ancestor would skip this job under the default success() check
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
     runs-on: ubuntu-latest
     concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
     steps:
