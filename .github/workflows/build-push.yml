@@ -1,0 +1,110 @@
+# Reusable: test -> build -> push to GHCR -> bump the image tag in saltxd/homelab-k3s (GitOps; Flux rolls it).
+# Caller example:
+#   jobs:
+#     web:
+#       uses: saltxd/.github/.github/workflows/build-push.yml@main
+#       with: { image: ghcr.io/saltxd/jobhunt-web, dockerfile: Dockerfile.web, runtime: python, test-cmd: "pytest -q tests",
+#               bump-file: automation/helmrelease-jobhunt-web.yaml, bump-kind: helm-values }
+#       secrets: { HOMELAB_K3S_DEPLOY_KEY: ${{ secrets.HOMELAB_K3S_DEPLOY_KEY }} }
+name: build-push
+on:
+  workflow_call:
+    inputs:
+      image:            { type: string, required: true,  description: "ghcr.io/saltxd/<name>" }
+      context:          { type: string, required: false, default: "." }
+      dockerfile:       { type: string, required: false, default: "Dockerfile" }
+      platforms:        { type: string, required: false, default: "linux/amd64" }
+      runtime:          { type: string, required: false, default: "none", description: "python | node | none" }
+      python-version:   { type: string, required: false, default: "3.12" }
+      node-version:     { type: string, required: false, default: "22" }
+      install-cmd:      { type: string, required: false, default: "" }
+      lint-cmd:         { type: string, required: false, default: "" }
+      test-cmd:         { type: string, required: false, default: "" }
+      bump-file:        { type: string, required: false, default: "", description: "path in homelab-k3s; empty = no bump" }
+      bump-kind:        { type: string, required: false, default: "manifest", description: "manifest | helm-values" }
+      bump-extra-files: { type: string, required: false, default: "", description: "comma-separated extra manifest files" }
+    secrets:
+      HOMELAB_K3S_DEPLOY_KEY: { required: false }
+permissions:
+  contents: read
+  packages: write
+jobs:
+  test:
+    if: ${{ inputs.test-cmd != '' || inputs.lint-cmd != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - if: ${{ inputs.runtime == 'python' }}
+        uses: actions/setup-python@v5
+        with: { python-version: "${{ inputs.python-version }}", cache: pip }
+      - if: ${{ inputs.runtime == 'node' }}
+        uses: actions/setup-node@v4
+        with: { node-version: "${{ inputs.node-version }}", cache: npm }
+      - name: install
+        if: ${{ inputs.install-cmd != '' }}
+        run: ${{ inputs.install-cmd }}
+      - name: lint
+        if: ${{ inputs.lint-cmd != '' }}
+        run: ${{ inputs.lint-cmd }}
+      - name: test
+        if: ${{ inputs.test-cmd != '' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          ${{ inputs.test-cmd }} 2>&1 | tee test.log
+          if grep -qE 'collected 0 items|no tests ran' test.log; then echo "::error::test suite collected 0 tests"; exit 1; fi
+  build:
+    needs: [test]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      pushed: ${{ steps.meta.outputs.pushed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        shell: bash
+        run: |
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "pull_request" ] && [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then echo "pushed=true" >> "$GITHUB_OUTPUT"; else echo "pushed=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: docker/setup-buildx-action@v3
+      - if: ${{ steps.meta.outputs.pushed == 'true' }}
+        uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ steps.meta.outputs.pushed == 'true' }}
+          tags: |
+            ${{ inputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ inputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  bump:
+    needs: [build]
+    if: ${{ needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
+    runs-on: ubuntu-latest
+    concurrency: { group: bump-homelab-k3s, cancel-in-progress: false }
+    steps:
+      - name: checkout the reusable repo (for the bump script)
+        uses: actions/checkout@v4
+        with: { repository: saltxd/.github, path: reusable }
+      - name: checkout homelab-k3s with the write deploy key
+        uses: actions/checkout@v4
+        with: { repository: saltxd/homelab-k3s, ref: main, path: homelab-k3s, ssh-key: "${{ secrets.HOMELAB_K3S_DEPLOY_KEY }}", persist-credentials: true }
+      - name: bump
+        shell: bash
+        env: { IMAGE: "${{ inputs.image }}", TAG: "${{ needs.build.outputs.tag }}", FILE: "${{ inputs.bump-file }}", KIND: "${{ inputs.bump-kind }}", EXTRA: "${{ inputs.bump-extra-files }}" }
+        run: |
+          set -euo pipefail
+          cd homelab-k3s
+          git config user.name "ci-bump"; git config user.email "ci-bump@users.noreply.github.com"
+          mode=""; [ "$KIND" = "helm-values" ] && mode="--helm-values"
+          bash ../reusable/scripts/bump-image.sh "$FILE" "$IMAGE" "$TAG" $mode
+          IFS=',' read -ra extra <<< "$EXTRA"; for f in "${extra[@]}"; do [ -n "$f" ] && bash ../reusable/scripts/bump-image.sh "$f" "$IMAGE" "$TAG"; done
+          git add -A
+          if git diff --cached --quiet; then echo "nothing to bump"; exit 0; fi
+          git commit -m "ci(${IMAGE##*/}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
+          git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
