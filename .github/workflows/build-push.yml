@@ -26,6 +26,8 @@ on:
       bump-file:        { type: string, required: false, default: "", description: "path in homelab-k3s; empty = no bump" }
       bump-kind:        { type: string, required: false, default: "manifest", description: "manifest | helm-values" }
       bump-extra-files: { type: string, required: false, default: "", description: "comma-separated extra manifest files" }
+      free-disk:        { type: boolean, required: false, default: false, description: "remove preinstalled toolchains from the runner first (multi-GB images, e.g. Chrome + Camoufox)" }
+      pull-login:       { type: boolean, required: false, default: false, description: "log in to GHCR on every run, not only before a push (the Dockerfile builds FROM a private ghcr.io image)" }
     secrets:
       HOMELAB_K3S_DEPLOY_KEY: { required: false }
 permissions:
@@ -70,8 +72,11 @@ jobs:
         run: |
           echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" != "pull_request" ] && [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then echo "pushed=true" >> "$GITHUB_OUTPUT"; else echo "pushed=false" >> "$GITHUB_OUTPUT"; fi
+      - if: ${{ inputs.free-disk }}
+        name: Free runner disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
       - uses: docker/setup-buildx-action@v3
-      - if: ${{ steps.meta.outputs.pushed == 'true' }}
+      - if: ${{ steps.meta.outputs.pushed == 'true' || inputs.pull-login }}
         uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       # Optional smoke: load the image locally and run a command inside it BEFORE anything is pushed or bumped.
