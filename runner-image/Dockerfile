@@ -44,8 +44,10 @@ RUN set -eux; cd /tmp; \
 RUN mkdir -p /opt/hostedtoolcache && chown runner:docker /opt/hostedtoolcache
 # Package lists stay in the image, as on the hosted runners: workflows run `sudo apt-get install` without an update.
 RUN apt-get update
+# ~/.local/bin on PATH, as on the hosted images: `pip install x` as the runner user lands there (user site).
 ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache \
     AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache \
-    PIP_BREAK_SYSTEM_PACKAGES=1
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PATH=/home/runner/.local/bin:$PATH
 
 USER runner
