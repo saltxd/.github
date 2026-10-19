@@ -1,4 +1,7 @@
 # Reusable: test -> build -> push to GHCR -> bump the image tag in saltxd/homelab-k3s (GitOps; Flux rolls it).
+# Jobs run on the self-hosted `homelab` runners (ARC in K3s, BookStack p379) when the caller is private, and on
+# GitHub-hosted ubuntu-latest when it is public (free there). `runner:` overrides. A push or PR event carries
+# github.event.repository; an event without it (schedule) falls back to ubuntu-latest, so pass `runner: homelab`.
 # Callers MUST grant `permissions: { contents: read, packages: write }` (a called workflow cannot exceed the caller's token).
 # Caller example:
 #   permissions: { contents: read, packages: write }
@@ -28,6 +31,7 @@ on:
       bump-extra-files: { type: string, required: false, default: "", description: "comma-separated extra manifest files" }
       free-disk:        { type: boolean, required: false, default: false, description: "remove preinstalled toolchains from the runner first (multi-GB images, e.g. Chrome + Camoufox)" }
       pull-login:       { type: boolean, required: false, default: false, description: "log in to GHCR on every run, not only before a push (the Dockerfile builds FROM a private ghcr.io image)" }
+      runner:           { type: string, required: false, default: "", description: "runs-on label; empty = homelab (self-hosted, ARC in K3s) for a private caller, ubuntu-latest for a public one" }
     secrets:
       HOMELAB_K3S_DEPLOY_KEY: { required: false }
 permissions:
@@ -36,7 +40,7 @@ permissions:
 jobs:
   test:
     if: ${{ inputs.test-cmd != '' || inputs.lint-cmd != '' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || (github.event.repository.private && 'homelab' || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v4
       - if: ${{ inputs.runtime == 'python' }}
@@ -61,7 +65,7 @@ jobs:
   build:
     needs: [test]
     if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || (github.event.repository.private && 'homelab' || 'ubuntu-latest') }}
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       pushed: ${{ steps.meta.outputs.pushed }}
@@ -111,7 +115,7 @@ jobs:
     needs: [build]
     # !cancelled(): the needs chain passes through the optional `test` job, and a skipped ancestor would skip this job under the default success() check
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.pushed == 'true' && inputs.bump-file != '' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || (github.event.repository.private && 'homelab' || 'ubuntu-latest') }}
     # per image: a bump of image A never queues behind (or cancels) a bump of image B. Ordering: the action only
     # bumps when its commit is still the branch head, so an older build never deploys over a newer one.
     concurrency: { group: "bump-homelab-k3s-${{ inputs.image }}", cancel-in-progress: false }

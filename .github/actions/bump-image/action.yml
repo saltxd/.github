@@ -4,7 +4,7 @@
 #   bump:
 #     needs: [image]
 #     if: github.ref == 'refs/heads/main'
-#     runs-on: ubuntu-latest
+#     runs-on: homelab            # self-hosted (private repos); ubuntu-latest in a public repo
 #     concurrency: { group: "bump-homelab-k3s-ghcr.io/saltxd/<name>", cancel-in-progress: false }
 #     steps:
 #       - uses: saltxd/.github/.github/actions/bump-image@main
