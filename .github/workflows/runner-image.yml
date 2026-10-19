@@ -21,15 +21,15 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           v=$(gh api repos/actions/runner/releases/latest --jq .tag_name)
           [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected runner release tag: $v"; exit 1; }
           echo "runner=${v#v}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: runner-image
           build-args: RUNNER_VERSION=${{ steps.v.outputs.runner }}
@@ -50,10 +50,10 @@ jobs:
             sudo -n true; apt-cache policy postgresql-client | grep -q Candidate
             pip install -q yamllint && yamllint --version'
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: runner-image
           build-args: RUNNER_VERSION=${{ steps.v.outputs.runner }}
