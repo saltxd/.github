@@ -1,0 +1,66 @@
+# Builds ghcr.io/saltxd/actions-runner (runner-image/Dockerfile), the image the homelab's self-hosted runners
+# run (ARC in K3s: homelab-k3s platform/arc). Weekly with the newest runner release: ARC runners never
+# self-update, and GitHub stops sending jobs to a runner more than 30 days behind. Flux pins :latest by
+# digest (homelab-k3s images/) and the Wednesday image train ships it. This repo is public, so these
+# builds run on GitHub-hosted runners at no cost.
+name: runner-image
+on:
+  push:
+    branches: [main]
+    paths: [runner-image/**, .github/workflows/runner-image.yml]
+  pull_request:
+    paths: [runner-image/**, .github/workflows/runner-image.yml]
+  schedule:
+    - cron: "0 9 * * 1"   # Mondays, ahead of Wednesday's image train
+  workflow_dispatch: {}
+permissions: { contents: read, packages: write }
+concurrency: { group: runner-image, cancel-in-progress: false }
+env:
+  IMAGE: ghcr.io/saltxd/actions-runner
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          v=$(gh api repos/actions/runner/releases/latest --jq .tag_name)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected runner release tag: $v"; exit 1; }
+          echo "runner=${v#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: runner-image
+          build-args: RUNNER_VERSION=${{ steps.v.outputs.runner }}
+          load: true
+          push: false
+          tags: runner/image:ci
+          cache-from: type=gha,scope=actions-runner
+          cache-to: type=gha,mode=max,scope=actions-runner
+      - name: smoke (every tool the workflows rely on, as the runner user)
+        run: |
+          docker run --rm --entrypoint bash runner/image:ci -euxc '
+            test "$(id -un)" = runner
+            /home/runner/bin/Runner.Listener --version | grep -qx "${{ steps.v.outputs.runner }}"
+            git --version; ssh -V; docker --version; docker buildx version; jq --version; gh --version
+            kubectl version --client; helm version; yq --version; shellcheck --version
+            python3 --version; python3 -m pip --version; python3 -m venv /tmp/v; gcc --version; make --version
+            test -w /opt/hostedtoolcache; test "$RUNNER_TOOL_CACHE" = /opt/hostedtoolcache
+            sudo -n true'
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: runner-image
+          build-args: RUNNER_VERSION=${{ steps.v.outputs.runner }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.v.outputs.runner }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/saltxd/.github
+            org.opencontainers.image.description=Self-hosted GitHub Actions runner for the homelab (ARC in K3s)
+          cache-from: type=gha,scope=actions-runner
