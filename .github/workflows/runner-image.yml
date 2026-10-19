@@ -43,11 +43,11 @@ jobs:
           docker run --rm --entrypoint bash runner/image:ci -euxc '
             test "$(id -un)" = runner
             /home/runner/bin/Runner.Listener --version | grep -qx "${{ steps.v.outputs.runner }}"
-            git --version; ssh -V; docker --version; docker buildx version; jq --version; gh --version
+            git --version; ssh -V; docker --version; docker buildx version; docker compose version; jq --version; gh --version
             kubectl version --client; helm version; yq --version; shellcheck --version
             python3 --version; python3 -m pip --version; python3 -m venv /tmp/v; gcc --version; make --version
             test -w /opt/hostedtoolcache; test "$RUNNER_TOOL_CACHE" = /opt/hostedtoolcache
-            sudo -n true'
+            sudo -n true; apt-cache policy postgresql-client | grep -q Candidate'
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
