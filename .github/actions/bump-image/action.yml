@@ -36,7 +36,7 @@ runs:
         else echo "::notice::${GITHUB_SHA::7} is no longer the head of ${GITHUB_REF#refs/heads/} (${head::7}); its run deploys instead"; echo "go=false" >> "$GITHUB_OUTPUT"; fi
     - name: checkout homelab-k3s with the write deploy key
       if: steps.head.outputs.go == 'true'
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { repository: saltxd/homelab-k3s, ref: main, path: homelab-k3s, ssh-key: "${{ inputs.deploy-key }}", persist-credentials: true }
     - name: bump
       if: steps.head.outputs.go == 'true'
